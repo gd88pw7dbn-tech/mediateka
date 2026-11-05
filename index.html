@@ -243,7 +243,7 @@ function build(raw) {
           const hit = rc === 'jp' ? tryOn('jp') : rc === 'rm' ? tryOn('rm') : (tryOn('jp') || tryOn('rm'));
           if (hit) { group = hit.g; order = [hit.gi, hit.di, '']; } else { group = 'Не из меню — названия проверит куратор'; order = [95, 0, it.title]; }
         }
-      } else if (sec === 'interior') { group = it.restaurant || 'Ресторан не указан'; order = [it.restaurant === JP ? 0 : it.restaurant ? 1 : 9, 0, it.title]; }
+      } else if (sec === 'interior') { const noAddr = !it.restaurant || it.restaurant === 'Рыба Моя'; group = noAddr ? 'Адрес не указан — куратор отметит через /halls' : it.restaurant; order = [it.restaurant === JP ? 0 : noAddr ? 9 : 1, 0, it.title]; }
       else if (sec === 'logo') group = 'Логотипы и знаки';
       else if (sec === 'menu') group = 'Меню, барные и винные карты';
       else if (sec === 'brand') group = 'Брендбук и фирменный стиль';
