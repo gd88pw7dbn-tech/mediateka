@@ -275,7 +275,7 @@ function build(raw) {
 function render() {
   if (S.stage !== 'ok') return renderState();
   const html = S.tab === 'menu' ? renderMenu() : S.tab === 'review' ? renderReview() : renderCatalog();
-  const isCur = S.me && (S.me.role === 'owner' || S.me.role === 'curator');
+  const isCur = S.me && ['owner', 'admin', 'curator'].includes(S.me.role);
   const tabs = [['cat', 'Каталог', ICO.grid], ['menu', 'Меню', ICO.menu], ...(isCur ? [['review', 'Проверка', ICO.check]] : [])];
   const scroll = document.querySelector('.body'); const top = scroll && S._keepScroll ? scroll.scrollTop : 0;
   $app.innerHTML = html + '<nav class="tabs" aria-label="Разделы">' + tabs.map(([id, l, ic]) => `<button data-act="tab" data-v="${id}"${S.tab === id ? ' aria-current="page"' : ''}>${ic}${l}${id === 'review' && S.me.review ? `<span class="dot">${S.me.review > 99 ? '99+' : S.me.review}</span>` : ''}</button>`).join('') + '</nav>' + renderOpen() + renderToast();
