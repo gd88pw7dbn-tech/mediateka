@@ -331,7 +331,7 @@ function catalogParts() {
     <div class="chips" role="group" aria-label="Раздел">${secs.map(([id, l]) => `<button data-act="sec" data-v="${id}" aria-pressed="${S.sec === id}">${l}</button>`).join('')}</div>`);
   let body = '';
   const nFiles = shown.reduce((a, p) => a + p.files.length, 0);
-  body += `<div class="sum"><span>${shown.length ? pl(shown.length, 'позиция', 'позиции', 'позиций') + ' · ' + pl(nFiles, 'файл', 'файла', 'файлов') : ''}</span><span>□ — в подборку</span></div>`;
+  body += `<div class="sum"><span>${shown.length ? pl(shown.length, 'позиция', 'позиции', 'позиций') + ' · ' + pl(nFiles, 'файл', 'файла', 'файлов') : ''}</span><button class="link" data-act="reload" style="height:auto;font-size:12px;color:var(--mute)">↻ обновить</button></div>`;
   if (!shown.length) {
     let other = [];
     if (words.length) {
@@ -339,7 +339,7 @@ function catalogParts() {
       if (!other.length && S.rest !== 'all') { const any = S.pos.filter(qOk); other = RESTS.filter(([id]) => id !== 'all' && id !== S.rest).map(([id, l]) => ({ l: '«' + (id === 'jp' ? JP : 'Рыба Моя') + '»', n: any.filter(p => p.rc === id).length, act: 'rest', v: id })).filter(x => x.n); }
     }
     if (other.length) body += `<div class="note"><p style="color:var(--ink)">${esc(other[0].act === 'rest' ? `У этого ресторана по запросу «${S.q}» ничего нет. Есть у другого:` : `В разделе «${SECN[S.sec]}» по запросу «${S.q}» ничего нет. Нашлось в других:`)}</p><div style="display:flex;flex-wrap:wrap;gap:6px">${other.map(o => `<button class="outline" data-act="${o.act}" data-v="${o.v}">${esc(o.l)} · ${o.n}</button>`).join('')}</div></div>`;
-    else body += `<div class="empty"><div class="note" style="margin:0"><span class="tt">${words.length ? 'Ничего не нашла' : 'Здесь пока пусто'}</span><p>${esc(words.length ? `По запросу «${S.q}» в медиатеке ничего нет. Попробуйте другое слово — или напишите боту в чат: он задаст уточняющий вопрос.` : 'В этом разделе пока нет файлов. Пришлите их боту файлами — они появятся здесь.')}</p></div></div>`;
+    else body += `<div class="empty"><div class="note" style="margin:0"><span class="tt">${words.length ? 'Ничего не нашла' : 'Здесь пока пусто'}</span><p>${esc(words.length ? `По запросу «${S.q}» в медиатеке ничего нет. Попробуйте другое слово — или напишите боту в чат: он задаст уточняющий вопрос.` : 'В этом разделе пока нет файлов. Пришлите их боту файлами — они появятся здесь.')}</p><button class="sec" data-act="reload">↻ Обновить — если только что загрузили</button></div></div>`;
   }
   const list = shown.slice(0, S.limit), groups = [];
   for (const p of list) { const k = p.sec + '|' + (p.sec === 'dish' ? p.rc + '|' : '') + p.group; let g = groups.find(x => x.k === k); if (!g) { g = { k, name: p.group, sec: p.sec, items: [] }; groups.push(g); } g.items.push(p); }
@@ -490,6 +490,7 @@ document.addEventListener('click', e => {
   if (a === 'mtab') { S.mtab = v; S.only = false; return render(); }
   if (a === 'upload') return toast('Пришлите боту фото «' + v + '» файлом (📎 → «Файл»), в подписи — это название. Оно встанет сюда, а блюдо пропадёт из списка «без фото».', true);
   if (a === 'retry') return boot();
+  if (a === 'reload') return boot(true);
   if (a === 'rvload') return rvLoad();
   if (a === 'rvpick') return rvSet(Number(v), null);
   if (a === 'rvskip') { S.rvSkip++; S.rvOwn = false; S.rvLast = ''; return rvLoad(); }
@@ -502,19 +503,24 @@ let qTimer = null;
 document.addEventListener('input', e => { if (e.target && e.target.id === 'q') { S.q = e.target.value; clearTimeout(qTimer); qTimer = setTimeout(() => { S.limit = 60; refreshCatalog(); }, 150); } });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target && e.target.id === 'q') e.target.blur(); if (e.key === 'Enter' && e.target && e.target.id === 'rvown') { const t = e.target.value.trim(); if (t.length >= 2) rvSet(null, t); } if (e.key === 'Escape' && S.open) { S.open = null; render(); } });
 
-async function boot() {
+async function boot(quiet) {
   if (!tg || !INIT) { S.stage = 'err'; S.err = 'notg'; return render(); }
   if (!/^https:\/\//.test(SB) && !/^http:\/\/(127\.0\.0\.1|localhost)/.test(SB) || !KEY) { S.stage = 'err'; S.err = 'cfg'; return render(); }
-  S.stage = 'load'; render();
+  if (!quiet || S.stage !== 'ok') { S.stage = 'load'; render(); }
+  S.loadedAt = Date.now();
   try {
     const r = await rpc('media_app_boot', { p_init: INIT });
     if (!r || !r.ok) { S.stage = 'err'; S.err = (r && r.error) || 'x'; return render(); }
     S.me = { role: r.role, name: r.name, review: r.review || 0 };
     build(r.items || []);
+    for (const k of [...S.sel]) if (!S.byKey[k]) S.sel.delete(k);
+    if (S.open && !S.byKey[S.open]) S.open = null;
     S.stage = 'ok';
-  } catch (e) { S.stage = 'err'; S.err = e.message; }
-  render();
+  } catch (e) { if (!quiet || S.stage !== 'ok') { S.stage = 'err'; S.err = e.message; } }
+  S._keepScroll = !!quiet; render();
 }
+// вернулись в каталог (например, после загрузки файлов в чат) — тихо подтянуть свежее
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.stage === 'ok' && Date.now() - (S.loadedAt || 0) > 30000) boot(true); });
 if (tg) {
   try { tg.ready(); tg.expand(); tg.setHeaderColor && tg.setHeaderColor('#F9EFE3'); tg.setBackgroundColor && tg.setBackgroundColor('#F9EFE3'); if (tg.setBottomBarColor) tg.setBottomBarColor('#FFFFFF'); tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (e) {}
   tg.BackButton && tg.BackButton.onClick(() => { if (S.open) { S.open = null; S._keepScroll = true; render(); } });
