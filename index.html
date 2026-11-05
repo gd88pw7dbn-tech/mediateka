@@ -197,7 +197,8 @@ const SECN = Object.fromEntries(SECS);
 const SEC_OF = { 'блюдо': 'dish', 'напиток': 'dish', 'интерьер': 'interior', 'фасад': 'interior', 'логотип': 'logo', 'меню': 'menu', 'брендбук': 'brand', 'шрифт': 'font', 'шаблон': 'deck',
   'шеф': 'people', 'команда': 'people', 'гости': 'people', 'событие': 'people' };
 const RESTS = [['all', 'Все рестораны'], ['rm', 'Рыба Моя'], ['jp', 'в Японии']];
-const restCode = r => !r ? 'all' : r === JP ? 'jp' : /^Рыба Моя/.test(r) ? 'rm' : 'other';
+const BOTH = 'Рыба Моя и Рыба Моя в Японии';
+const restCode = r => !r || r === BOTH ? 'all' : r === JP ? 'jp' : /^Рыба Моя/.test(r) ? 'rm' : 'other';
 const SHORT = r => !r ? '' : r === JP ? 'в Японии' : r;
 const SIGN = { jp: 'img/sign-jp.webp', rm: 'img/sign-rm.webp' };
 const SYN = [[/лосос|семг|форел/, 'красная рыба'], [/тунц|тунец/, 'красная рыба тунец'], [/угор|угр|унаги/, 'угорь унаги'], [/гребеш/, 'морепродукты'], [/краб|кревет|кальмар|осьминог|мид/, 'морепродукты'],
@@ -228,7 +229,7 @@ const fontCss = t => { const n = norm(t); return /artica/.test(n) ? 'ArticaPro, 
 const fontW = t => /medium|semi|bold|полужир|жирн/i.test(t || '') ? 500 : 400;
 
 function build(raw) {
-  const items = raw.map(a => ({ id: a[0], kind: a[1], section: a[2], restaurant: a[3], title: a[4] || a[5] || 'Без названия', fn: a[5], mime: a[6], w: a[7], h: a[8], size: a[9], tags: a[10], ver: Number(a[11]) || 0, m: !!a[12], bgc: a[13] }));
+  const items = raw.map(a => ({ id: a[0], kind: a[1], section: a[2], restaurant: a[14] ? BOTH : a[3], both: !!a[14], title: a[4] || a[5] || 'Без названия', fn: a[5], mime: a[6], w: a[7], h: a[8], size: a[9], tags: a[10], ver: Number(a[11]) || 0, m: !!a[12], bgc: a[13] }));
   const map = new Map();
   for (const it of items) {
     const sec = SEC_OF[it.section] || 'other', rc = restCode(it.restaurant);
@@ -382,6 +383,9 @@ function renderOpen() {
     <div class="acts"><button class="primary" data-act="sendone" data-v="all"${S.sending ? ' disabled' : ''}><span>${S.sending ? 'Отправляю…' : esc(sendL)}</span><small>${esc(sendN)}</small></button>
       ${N > 1 ? `<button class="sec" data-act="sendone" data-v="${i}"${S.sending ? ' disabled' : ''}>Только этот — № ${i + 1}</button>` : ''}
       <button class="sec soft" data-act="sel" data-k="${esc(p.key)}" aria-pressed="${sel}">${sel ? '✓ В подборке — убрать' : '+ Добавить в подборку'}</button></div>
+    ${S.me && ['owner', 'admin', 'curator'].includes(S.me.role) && (p.sec === 'dish' || p.sec === 'logo') ? (() => { const cur = p.files.every(f => f.both) ? 'both' : p.rc === 'jp' ? 'jp' : p.rc === 'rm' ? 'rm' : '';
+      const opts = [['jp', 'Только в Японии'], ['rm', 'Только Рыба Моя'], ...(p.sec === 'dish' ? [['both', 'В обоих']] : [])];
+      return `<div style="display:flex;flex-direction:column;gap:8px"><span class="meta">Где показывать${N > 1 ? ' — все ' + N + ' файла позиции' : ''}</span><div class="seg" role="group" aria-label="Где показывать" style="margin:0;grid-template-columns:repeat(${opts.length},minmax(0,1fr))">${opts.map(([m, l]) => `<button data-act="setrest" data-v="${m}" aria-pressed="${cur === m}"${S.restBusy ? ' disabled' : ''}>${l}</button>`).join('')}</div></div>`; })() : ''}
     <div class="how">${esc(how)} Файлы придут в чат с ботом через несколько секунд.</div></div></div></div>`;
 }
 function renderToast() { return S.toast ? `<div class="toast" role="status"><span>${esc(S.toast.text)}</span><div>${S.toast.go ? '<button class="go" data-act="gochat">Перейти в чат</button>' : ''}<button data-act="hidetoast">Понятно</button></div></div>` : ''; }
@@ -435,6 +439,16 @@ function renderReview() {
 const menuOf = name => { const n = dishNorm(name), j = MENU_IDX.jp.has(n), r = MENU_IDX.rm.has(n); return j && r ? 'есть в меню обоих ресторанов' : j ? 'меню «Рыба Моя в Японии»' : r ? 'меню «Рыба Моя»' : 'нет в меню'; };
 
 // ---------- действия ----------
+async function setRest(mode) {
+  const p = S.open && S.byKey[S.open]; if (!p || S.restBusy) return;
+  S.restBusy = true; render();
+  try {
+    const r = await rpc('media_app_rest', { p_init: INIT, p_ids: p.files.map(f => f.id), p_mode: mode });
+    S.restBusy = false;
+    if (r && r.ok) { haptic('ok'); S.open = null; await boot(true); toast('Готово: «' + p.title + '» — ' + { jp: 'только в «Рыба Моя в Японии»', rm: 'только в «Рыба Моя»', both: 'в обоих ресторанах' }[mode]); }
+    else { haptic('err'); toast(r && r.error === 'not_allowed' ? 'Где показывать, решает куратор.' : 'Не сохранилось — попробуйте ещё раз.'); }
+  } catch (e) { S.restBusy = false; toast('Нет связи — не сохранилось.'); }
+}
 function toast(text, go) { S.toast = { text, go: !!go }; render(); clearTimeout(S._tt); S._tt = setTimeout(() => { S.toast = null; render(); }, 9000); }
 const haptic = k => { try { tg && tg.HapticFeedback && (k === 'ok' ? tg.HapticFeedback.notificationOccurred('success') : k === 'err' ? tg.HapticFeedback.notificationOccurred('error') : tg.HapticFeedback.selectionChanged()); } catch (e) {} };
 async function send(files) {
@@ -491,6 +505,7 @@ document.addEventListener('click', e => {
   if (a === 'upload') return toast('Пришлите боту фото «' + v + '» файлом (📎 → «Файл»), в подписи — это название. Оно встанет сюда, а блюдо пропадёт из списка «без фото».', true);
   if (a === 'retry') return boot();
   if (a === 'reload') return boot(true);
+  if (a === 'setrest') return setRest(v);
   if (a === 'rvload') return rvLoad();
   if (a === 'rvpick') return rvSet(Number(v), null);
   if (a === 'rvskip') { S.rvSkip++; S.rvOwn = false; S.rvLast = ''; return rvLoad(); }
